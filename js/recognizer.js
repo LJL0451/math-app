@@ -62,6 +62,8 @@
            [P([[0, 0], [100, 0]]), P([[30, 0], [30, 100]]), P([[70, 0], [70, 100]])],
            [P([[0, 0], [100, 0]]), C([[30, 0], [28, 60], [15, 100]]), C([[70, 0], [70, 80], [90, 100]])]],
     '^': [[P([[0, 100], [50, 0], [100, 100]])]],
+    // multiplication cross: same shape family as x; told apart by context (see disambiguate)
+    'times': [[P([[10, 10], [90, 90]]), P([[90, 10], [10, 90]])], [P([[10, 10], [90, 90]]), P([[10, 90], [90, 10]])]],
   };
   // ---------- $P core ----------
   function pathLen(pts) { let d = 0; for (let i = 1; i < pts.length; i++) if (pts[i].s === pts[i - 1].s) d += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y); return d; }
@@ -214,8 +216,9 @@
         }
       }
       // radical can also have been merged with its contents in a single group
-      syms.push({ sym, b });
+      syms.push({ sym, b, ranked: g.length > 0 && (sym === 'x' || sym === 'times') ? classify(g, null) : null });
     }
+    disambiguate(syms, H);
     // fix: '-' then content under a radical shape inside one group (rare) ignored.
     // 4. superscripts
     const out = []; let i = 0;
@@ -224,28 +227,62 @@
       const s = syms[i]; out.push(s); i++;
       if (base(s) && s.sym !== '.') {
         const sup = [];
-        while (i < syms.length && !'-+=/'.includes(syms[i].sym) && syms[i].b.maxY < s.b.cy + 0.1 * s.b.h && syms[i].b.h < 0.8 * Math.max(s.b.h, H * 0.6) && syms[i].sym !== '.') sup.push(syms[i++]);
+        while (i < syms.length && !['-', '+', '=', '/', 'times', 'cdot'].includes(syms[i].sym) && syms[i].b.maxY < s.b.cy + 0.1 * s.b.h && syms[i].b.h < 0.8 * Math.max(s.b.h, H * 0.6) && syms[i].sym !== '.') sup.push(syms[i++]);
         if (sup.length) out.push({ sup });
       }
     }
     return render(out);
   }
-  const LATEX = { pi: '\\pi', '-': '-', '+': '+', '/': '/', '^': '^', '.': '.', '=': '=', x: 'x', y: 'y', sqrt: '\\sqrt{}' };
+  const LATEX = { pi: '\\pi', '-': '-', '+': '+', '/': '/', '^': '^', '.': '.', '=': '=', x: 'x', y: 'y', sqrt: '\\sqrt{}', times: '\\times ', cdot: '\\cdot ' };
   function render(list) {
     let latex = '', plain = '';
     for (const s of list) {
       if (s.sup) { const r = render(s.sup); latex += `^{${r.latex}}`; plain += `^(${r.plain})`; continue; }
       if (s.latex) { latex += s.latex; plain += s.plain; continue; }
-      latex += LATEX[s.sym] || s.sym; plain += s.sym === 'sqrt' ? 'sqrt' : s.sym;
+      latex += LATEX[s.sym] || s.sym; plain += s.sym === 'times' || s.sym === 'cdot' ? '*' : s.sym;
     }
     return { latex, plain };
   }
   // stroke input: array of strokes; each stroke array of [x,y,(p)]
-  function recogniseInk(strokes) {
+  // ---------- x vs ×, '.' vs '·' from context ----------
+  let OPTS = {};
+  const isOperand = s => s && (/^[0-9xy)]$|^pi$/.test(s.sym) || s.latex);
+  const isOperandStart = s => s && (isOperand(s) || s.sym === '(');
+  function lineRef(syms, i, H) { // baseline/top from nearby full-height operands
+    const near = []; for (let k = i - 2; k <= i + 2; k++) if (k !== i && syms[k] && /^[0-9()]$|^pi$|^[xy]$/.test(syms[k].sym) && syms[k].b.h > 0.3 * H) near.push(syms[k].b);
+    if (!near.length) return null;
+    const base = Math.max(...near.map(b => b.maxY)), top = Math.min(...near.map(b => b.minY)); return { base, top, h: Math.max(base - top, 1) };
+  }
+  function disambiguate(syms, H) {
+    for (let i = 0; i < syms.length; i++) {
+      const s = syms[i], prev = syms[i - 1], next = syms[i + 1];
+      const between = isOperand(prev) && isOperandStart(next);
+      if (s.sym === '.') { // a dot raised to mid-height between operands is a multiplication dot
+        const L = lineRef(syms, i, H); if (between && L && s.b.cy < L.base - 0.28 * L.h) s.sym = 'cdot'; continue;
+      }
+      if (s.sym !== 'x' && s.sym !== 'times') continue;
+      const L = lineRef(syms, i, H); let score = between ? 0.5 : -3;
+      if (L) {
+        const lowGap = (L.base - s.b.maxY) / L.h, rel = s.b.h / L.h, mid = (L.top + L.base) / 2;
+        if (lowGap > 0.12) score += 1.5; else if (lowGap < 0.05) score -= 1;   // x sits on the baseline, × floats
+        if (rel < 0.7) score += 0.5;
+        if (Math.abs(s.b.cy - mid) < 0.15 * L.h) score += 0.5;
+        if (s.b.minY > L.top + 0.12 * L.h) score += 0.25;
+      }
+      if (s.ranked) { // trained samples (weighted in classify) break the tie when they disagree clearly
+        const tx = (s.ranked.find(r => r[0] === 'x') || [0, Infinity])[1], tt = (s.ranked.find(r => r[0] === 'times') || [0, Infinity])[1];
+        if (isFinite(tx) && isFinite(tt) && Math.abs(tx - tt) > 0.08 * Math.min(tx, tt)) score += tt < tx ? 0.75 : -0.75;
+      }
+      if (OPTS.expectsVar === false) score += 0.75; else if (OPTS.expectsVar === true) score -= 0.25;
+      s.sym = score >= 1.25 ? 'times' : 'x';
+    }
+  }
+  function recogniseInk(strokes, opts) {
+    OPTS = opts || {};
     const clean = strokes.map(s => s.map(p => [p[0], p[1]])).filter(s => s.length);
     if (!clean.length) return { latex: '', plain: '' };
     return recognise(clean, 0);
   }
-  const api = { recognise: recogniseInk, classify, addTemplate, resetTemplates, symbols: Object.keys(T).concat(['-', '.', '/', '=']), _T: T, _bbox: bbox };
+  const api = { recognise: recogniseInk, classify, addTemplate, resetTemplates, symbols: Object.keys(T).concat(['-', '.', '/', '=', 'cdot']), _T: T, _bbox: bbox };
   if (typeof module !== 'undefined') module.exports = api; else root.Recognizer = api;
 })(this);

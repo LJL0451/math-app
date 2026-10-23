@@ -15,7 +15,7 @@ const topicById = id => TOPICS.find(t => t.id === id);
 const S = { progress: {}, srs: {}, settings: { theme: 'auto', bg: 'grid', finger: false }, placement: null, templates: [] };
 async function loadState() {
   for (const k of ['progress', 'srs', 'settings', 'placement', 'templates']) { const v = await DB.get('kv', k); if (v != null) S[k] = k === 'settings' ? Object.assign(S.settings, v) : v; }
-  S.templates.forEach(t => Recognizer.addTemplate(t.sym, t.strokes, true));
+  S.templates.forEach(t => t.sym !== 'cdot' && Recognizer.addTemplate(t.sym, t.strokes, true));
   applyTheme();
 }
 const save = k => DB.set('kv', k, S[k]);
@@ -148,7 +148,7 @@ function startSession(cfg) {
   function readAnswer(st) {
     if (marked) return;
     if (!st.length) { recog = null; $('#read').innerHTML = 'Write your final answer above.'; setActs(); return; }
-    recog = Recognizer.recognise(st); const ok = MathCheck.valid(recog.plain);
+    recog = Recognizer.recognise(st, { expectsVar: /[xy]/.test(String(q && q.a).replace(/sqrt|pi/g, '')) }); const ok = MathCheck.valid(recog.plain);
     $('#read').innerHTML = `I read: <span class="rec">${K(recog.latex || '?', false)}</span> ${ok ? '' : '<span class="warn">— can’t parse that, try rewriting</span>'}`;
     recog.ok = ok; setActs();
   }
@@ -194,11 +194,11 @@ function undoLast(q, ok, mode) { // revert recordResult effects approximately
 function MathCheckLatex(a) { return a.replace(/\*/g, '').replace(/\^\((\d+)\)/g, '^{$1}').replace(/\^(\d+)/g, '^{$1}').replace(/sqrt\((\d+)\)/g, '\\sqrt{$1}').replace(/pi/g, '\\pi').replace(/\+\-/g, '-').replace(/\(1\)x/g, 'x').replace(/(\d+)\/(\d+)/g, '\\frac{$1}{$2}'); }
 // ---------- handwriting training ----------
 routes.train = () => {
-  const syms = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'x', 'y', '+', '(', ')', 'sqrt', 'pi'];
-  const label = s => s === 'sqrt' ? '√' : s === 'pi' ? 'π' : s;
+  const syms = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'x', 'y', '+', 'times', 'cdot', '(', ')', 'sqrt', 'pi'];
+  const label = s => ({ sqrt: '√', pi: 'π', times: '×', cdot: '·' }[s] || s);
   let i = 0;
   view().innerHTML = header('Teach my handwriting') + `<main class="train">
-    <p class="muted">Write the shown symbol once in the box, then Save. 3–5 samples of each symbol makes recognition much more reliable for your writing. Use “Test” to try whole answers.</p>
+    <p class="muted">For × write it small and centred, like a plus turned 45°; for the letter x sit it on the line. The · dot is read by its height, so its samples just let you practise it — try “3·4” with Test. Write the shown symbol once in the box, then Save. 3–5 samples of each symbol makes recognition much more reliable for your writing. Use “Test” to try whole answers.</p>
     <div class="seg" id="syms">${syms.map((s, k) => `<button class="btn small" data-i="${k}">${label(s)} <small>${S.templates.filter(t => t.sym === s).length}</small></button>`).join('')}</div>
     <div class="target" id="target"></div>
     <div class="ansbox tall"><canvas id="tc" class="ink"></canvas></div>
@@ -209,7 +209,7 @@ routes.train = () => {
   view().querySelectorAll('#syms button').forEach(b => b.onclick = () => { i = +b.dataset.i; show(); }); show();
   $('#tclear').onclick = () => { pad.load([]); $('#tout').innerHTML = ''; };
   $('#tsave').onclick = async () => { if (!pad.strokes.length) return; const st = pad.strokes.map(s => s.map(p => [Math.round(p[0]), Math.round(p[1])]));
-    S.templates.push({ sym: syms[i], strokes: st }); Recognizer.addTemplate(syms[i], st, true); await save('templates'); pad.load([]);
+    S.templates.push({ sym: syms[i], strokes: st }); if (syms[i] !== 'cdot') Recognizer.addTemplate(syms[i], st, true); await save('templates'); pad.load([]);
     view().querySelector(`#syms [data-i="${i}"] small`).textContent = S.templates.filter(t => t.sym === syms[i]).length; $('#tout').textContent = 'Saved.'; };
   $('#ttest').onclick = () => { const r = Recognizer.recognise(pad.strokes); $('#tout').innerHTML = `I read: ${K(r.latex || '?')} <code>${esc(r.plain)}</code>`; };
   $('#treset').onclick = async () => { if (!confirm('Delete all your handwriting samples?')) return; S.templates = []; await save('templates'); Recognizer.resetTemplates(); routes.train(); };

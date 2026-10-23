@@ -4,6 +4,9 @@ const T = R._T;
 // synth a symbol: random variant, random affine, smooth wobble, at x offset, height h
 function synth(sym, x0, y0, h) {
   if (sym === '-') return [[[x0, y0 + h * 0.5], [x0 + h * 0.6, y0 + h * 0.5 + (rnd() - .5) * 3]]].map(s => interp(s));
+  if (sym === 'xs') return synth('x', x0, y0 + h * 0.4, h * 0.6);
+  if (sym === 'times') { const r = synth('x', x0 + h * 0.12, y0 + h * 0.22, h * 0.5).map(st => st); return r; }
+  if (sym === 'cdot') return [[[x0 + 2, y0 + h * 0.5], [x0 + 3, y0 + h * 0.5 + 1], [x0 + 3.5, y0 + h * 0.5]]];
   if (sym === '.') return [[[x0 + 2, y0 + h - 3], [x0 + 3, y0 + h - 2], [x0 + 3.5, y0 + h - 3]]];
   const vars = T[sym]; const v = vars[Math.floor(rnd() * vars.length)];
   const rot = (rnd() - .5) * 0.25, sh = (rnd() - .5) * 0.3, sx = 0.85 + rnd() * 0.3;
@@ -16,7 +19,7 @@ function synth(sym, x0, y0, h) {
   }));
 }
 function interp(s) { const o = []; for (let i = 0; i <= 10; i++) o.push([s[0][0] + (s[1][0] - s[0][0]) * i / 10, s[0][1] + (s[1][1] - s[0][1]) * i / 10]); return o; }
-function width(sym, h) { return sym === '.' ? 8 : sym === 'sqrt' ? h * 1.3 : h * 0.75; }
+function width(sym, h) { return sym === '.' || sym === 'cdot' ? 8 : sym === 'times' || sym === 'xs' ? h * 0.5 : sym === 'sqrt' ? h * 1.3 : h * 0.75; }
 // sequence writer, tokens: symbols; {sup:[...]}; {frac:[num,den]}
 function write(tokens, x, y, h) {
   let strokes = [];
@@ -36,7 +39,7 @@ function write(tokens, x, y, h) {
 const sym = s => s.split(' ');
 // isolated symbol accuracy
 let ok = 0, tot = 0; const conf = {};
-for (const s of Object.keys(T).filter(k => k !== 'sqrt').concat(['-'])) for (let k = 0; k < 40; k++) {
+for (const s of Object.keys(T).filter(k => k !== 'sqrt' && k !== 'times').concat(['-'])) for (let k = 0; k < 40; k++) {
   const st = synth(s, 100, 100, 60 + rnd() * 40); const r = R.recognise(st).plain;
   const exp = s; tot++; if (r === exp) ok++; else conf[s + '->' + r] = (conf[s + '->' + r] || 0) + 1;
 }
@@ -47,9 +50,11 @@ const cases = [
   [['x', { sup: ['2'] }], 'x^(2)'], [sym('2 x + 3'), '2x+3'], [sym('3 x - 1'), '3x-1'], [[{ sqrt: ['2'] }], 'sqrt(2)'], [['3', { sqrt: ['5'] }], '3sqrt(5)'],
   [sym('2 pi'), '2pi'], [['x', '=', '4'], 'x=4'], [sym('( x + 2 ) ( x - 3 )'), '(x+2)(x-3)'], [sym('1 9 6 0'), '1960'],
   [['6', 'x', { sup: ['2'] }, '+', '2'], '6x^(2)+2'], [[{ frac: [['1', '2'], ['5']] }], '((12)/(5))'], [sym('y + 1'), 'y+1'],
+  [sym('3 times 4'), '3*4'], [sym('2 times x'), '2*x'], [sym('x times x'), 'x*x'], [sym('1 2 times 5'), '12*5'], [sym('3 cdot 4'), '3*4'], [sym('2 cdot x'), '2*x'],
+  [sym('2 xs'), '2x'], [sym('2 xs + 1'), '2x+1'], [sym('xs times xs'), 'x*x'], [sym('3 times xs'), '3*x'], [sym('2 x'), '2x'], [sym('x + 3'), 'x+3'], [['3', 'x', { sup: ['2'] }], '3x^(2)'], [sym('( x + 1 ) times 2'), '(x+1)*2'],
 ];
 // '=' synth
 T['='] = [[[[0, 35], [100, 35]].map(p => p), [[0, 65], [100, 65]]].map(s => interp(s))];
-let eok = 0;
-for (const [tok, exp] of cases) { let c = 0; for (let k = 0; k < 20; k++) { const r = R.recognise(write(tok, 50, 200, 50 + rnd() * 30).strokes).plain; if (r === exp) c++; else if (k < 2) console.log('  miss', exp, 'got', r); } console.log(exp.padEnd(16), c + '/20'); eok += c; }
+let eok = 0; const opt = e => ({ expectsVar: /[xy]/.test(e) ? undefined : false });
+for (const [tok, exp] of cases) { let c = 0; for (let k = 0; k < 20; k++) { const r = R.recognise(write(tok, 50, 200, 50 + rnd() * 30).strokes, opt(exp)).plain; if (r === exp) c++; else if (k < 2) console.log('  miss', exp, 'got', r); } console.log(exp.padEnd(16), c + '/20'); eok += c; }
 console.log(`expressions: ${eok}/${cases.length * 20} = ${(100 * eok / cases.length / 20).toFixed(1)}%`);
