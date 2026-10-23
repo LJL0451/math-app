@@ -19,6 +19,8 @@ class InkPad {
   inks(e) { return e.pointerType === 'pen' || e.pointerType === 'mouse' || (this.allowTouch && e.pointerType === 'touch'); }
   down(e) {
     e.preventDefault();
+    // palm guard: ignore non-pen contacts that start near the screen edges
+    const EDGE = 28; if (e.pointerType !== 'pen' && (e.clientX < EDGE || e.clientY < EDGE || e.clientX > innerWidth - EDGE || e.clientY > innerHeight - EDGE)) return;
     if (!this.inks(e)) { if (this.scroller) this.pan = { y: e.clientY, x: e.clientX, id: e.pointerId }; return; }
     try { this.c.setPointerCapture(e.pointerId); } catch (_) {}
     this.erasing = this.tool === 'eraser' || (e.buttons & 32) || (e.pointerType === 'pen' && (e.buttons & 2));

@@ -47,3 +47,7 @@ canvas.ink{position:absolute;inset:0;width:100%;height:100%;touch-action:none;co
  .qpanel,.apanel{border-left:0}.qpanel{border-bottom:1px solid var(--line);max-height:28vh}.apanel{border-top:1px solid var(--line);max-height:46vh}
  .ansbox{height:120px}
 }
+.card.warnc{border:2px solid #e0a100}
+.diagram.graph{max-width:300px}.diagram .gl{stroke:currentColor;opacity:.12}.diagram .ax{stroke:currentColor;stroke-width:1.5;opacity:.7}.diagram .curve{fill:none;stroke:var(--acc);stroke-width:3}.diagram .pt{fill:var(--bad)}.diagram .tick{font-size:11px;opacity:.7}
+/* keep controls off the very bottom edge (palm / gesture bar) */
+.apanel{padding-bottom:calc(28px + env(safe-area-inset-bottom))}main{padding-bottom:calc(40px + env(safe-area-inset-bottom))}

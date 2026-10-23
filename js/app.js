@@ -15,7 +15,7 @@ const topicById = id => TOPICS.find(t => t.id === id);
 const S = { progress: {}, srs: {}, settings: { theme: 'auto', bg: 'grid', finger: false }, placement: null, templates: [] };
 async function loadState() {
   for (const k of ['progress', 'srs', 'settings', 'placement', 'templates']) { const v = await DB.get('kv', k); if (v != null) S[k] = k === 'settings' ? Object.assign(S.settings, v) : v; }
-  S.templates.forEach(t => t.sym !== 'cdot' && Recognizer.addTemplate(t.sym, t.strokes, true));
+  S.templates.forEach(t => !Recognizer.POSITIONAL.includes(t.sym) && Recognizer.addTemplate(t.sym, t.strokes, true));
   applyTheme();
 }
 const save = k => DB.set('kv', k, S[k]);
@@ -56,7 +56,7 @@ function nextTopic() { return TOPICS.find(t => !prog(t.id).mastered) || TOPICS[T
 // ---------- home ----------
 routes.home = () => {
   const due = dueItems().length, nt = nextTopic();
-  view().innerHTML = `<header class="bar"><span></span><h1>Pen Maths</h1><a class="btn icon" href="#settings" aria-label="Settings">⚙</a></header>
+  view().innerHTML = `<header class="bar"><button class="btn icon fsbtn" aria-label="Full screen">⛶</button><h1>Pen Maths</h1><a class="btn icon" href="#settings" aria-label="Settings">⚙</a></header>
   <main class="home">
     ${!S.placement ? `<a class="card big primary" href="#placement"><b>Start with a placement check</b><span>About 16 questions across grades 7–10. Write with your S Pen; it finds your starting point.</span></a>` : ''}
     <a class="card big ${S.placement ? 'primary' : ''}" href="#topic/${nt.id}"><b>Continue: ${esc(nt.title)}</b><span>Level ${prog(nt.id).level} of 3 · ${prog(nt.id).correct} correct so far</span></a>
@@ -66,6 +66,7 @@ routes.home = () => {
       <a class="card" href="#progress"><b>Progress</b><span>Accuracy and levels</span></a>
       <a class="card" href="#train"><b>Teach my handwriting</b><span>${S.templates.length} samples — improves recognition</span></a>
     </div>
+    ${backupDue() ? `<a class="card warnc" href="#settings"><b>Back up your progress</b><span>Last backup: ${S.settings.lastBackup ? new Date(S.settings.lastBackup).toLocaleDateString() : 'never'}. Settings → Export saves a file you can import later.</span></a>` : ''}
     ${S.placement ? `<p class="muted center"><a href="#placement">Retake placement check</a></p>` : ''}
   </main>`;
 };
@@ -95,9 +96,16 @@ routes.settings = () => {
     <h3>Working background</h3><div class="seg">${opt('bg', 'grid', 'Grid')}${opt('bg', 'lines', 'Lined')}${opt('bg', 'blank', 'Blank')}</div>
     <h3>Finger drawing</h3><div class="seg"><button class="btn ${s.finger ? '' : 'primary'}" data-k="finger" data-v="0">Off (palm rejection)</button><button class="btn ${s.finger ? 'primary' : ''}" data-k="finger" data-v="1">On</button></div>
     <p class="muted">With finger drawing off, only the S Pen writes; fingers scroll the page.</p>
+    <h3>Full screen</h3><div class="seg"><button class="btn" id="fs">${document.fullscreenElement ? 'Exit full screen' : 'Enter full screen'}</button></div>
+    <p class="muted">While full screen is on, it re-enters automatically on your next pen tap if Android takes it away.</p>
+    <h3>Backup</h3><div class="seg"><button class="btn primary" id="exp">Export progress to a file</button><label class="btn" for="impf">Import from a file</label><input type="file" id="impf" accept=".json,application/json" hidden></div>
+    <p class="muted">Includes progress, placement, review schedule, settings and your handwriting samples (not saved working). Last backup: ${S.settings.lastBackup ? new Date(S.settings.lastBackup).toLocaleString() : 'never'}.</p>
     <h3>Data</h3><button class="btn danger" id="reset">Reset all progress</button>
     <p class="muted">Everything is stored on this device only. Works offline.</p></main>`;
   view().querySelectorAll('[data-k]').forEach(b => b.onclick = () => { const k = b.dataset.k; s[k] = k === 'finger' ? b.dataset.v === '1' : b.dataset.v; save('settings'); applyTheme(); routes.settings(); });
+  $('#fs').onclick = () => { toggleFullscreen(); setTimeout(routes.settings, 400); };
+  $('#exp').onclick = exportBackup;
+  $('#impf').onchange = e => e.target.files[0] && importBackup(e.target.files[0]);
   $('#reset').onclick = async () => { if (!confirm('Erase all progress and saved working?')) return; S.progress = {}; S.srs = {}; S.placement = null; await save('progress'); await save('srs'); await DB.del('kv', 'placement'); await DB.clear('ink'); go('#home'); };
 };
 // ---------- sessions ----------
@@ -125,7 +133,7 @@ routes.placement = () => {
 function startSession(cfg) {
   let q, workPad, ansPad, recog = null, marked = false, saveT, recT, count = 0, right = 0;
   view().innerHTML = `<div class="session">
-    <header class="bar"><a class="btn icon" href="${cfg.back || '#home'}" aria-label="Back">←</a><h1>${esc(cfg.title)}</h1><span class="muted" id="sp"></span></header>
+    <header class="bar"><a class="btn icon" href="${cfg.back || '#home'}" aria-label="Back">←</a><h1>${esc(cfg.title)}</h1><span class="muted" id="sp"></span><button class="btn icon fsbtn" aria-label="Full screen">⛶</button></header>
     <section class="qpanel"><div id="qtext" class="q"></div></section>
     <section class="workwrap">
       <div class="tools"><button class="btn tool primary" data-tool="pen" aria-label="Pen">✎ Pen</button><button class="btn tool" data-tool="eraser">⌫ Eraser</button><button class="btn" id="undo" aria-label="Undo">↶</button><button class="btn" id="redo" aria-label="Redo">↷</button><button class="btn" id="wclear">Clear</button><span class="muted hint">Working — finger scrolls</span></div>
@@ -148,7 +156,7 @@ function startSession(cfg) {
   function readAnswer(st) {
     if (marked) return;
     if (!st.length) { recog = null; $('#read').innerHTML = 'Write your final answer above.'; setActs(); return; }
-    recog = Recognizer.recognise(st, { expectsVar: /[xy]/.test(String(q && q.a).replace(/sqrt|pi/g, '')) }); const ok = MathCheck.valid(recog.plain);
+    recog = Recognizer.recognise(st, { expectsVar: /[a-zθ]/.test(String(q && q.a).replace(/sqrt|pi|sin|cos|tan|log|ln/g, '')) }); const ok = MathCheck.valid(recog.plain);
     $('#read').innerHTML = `I read: <span class="rec">${K(recog.latex || '?', false)}</span> ${ok ? '' : '<span class="warn">— can’t parse that, try rewriting</span>'}`;
     recog.ok = ok; setActs();
   }
@@ -168,7 +176,8 @@ function startSession(cfg) {
   }
   function showFb(ok, msg) { $('#fb').innerHTML = `<div class="verdict ${ok ? 'good' : 'bad'}">${ok ? '✓ Correct' : '✗ Not quite'} ${msg ? `<small>${msg}</small>` : ''}</div>` + solutionHTML(); $('#fb').scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
   function check() {
-    let ok = MathCheck.equivalent(recog.plain, q.a, q.tol), msg = '';
+    let ok = MathCheck.equivalent(recog.plain, q.a, q.tol, { upToC: q.upToC, ordered: q.ordered }), msg = '';
+    if (!ok && /,/.test(q.a) && !/,/.test(recog.plain)) msg = q.ordered ? 'Write both coordinates, x first, separated by a comma.' : 'This needs every answer, separated by commas.';
     if (ok && q.form === 'factored' && !recog.plain.includes('(')) { ok = false; msg = 'That’s equivalent, but the question asks for factorised form (with brackets).'; }
     finishQ(ok, 'auto'); showFb(ok, msg);
   }
@@ -194,11 +203,12 @@ function undoLast(q, ok, mode) { // revert recordResult effects approximately
 function MathCheckLatex(a) { return a.replace(/\*/g, '').replace(/\^\((\d+)\)/g, '^{$1}').replace(/\^(\d+)/g, '^{$1}').replace(/sqrt\((\d+)\)/g, '\\sqrt{$1}').replace(/pi/g, '\\pi').replace(/\+\-/g, '-').replace(/\(1\)x/g, 'x').replace(/(\d+)\/(\d+)/g, '\\frac{$1}{$2}'); }
 // ---------- handwriting training ----------
 routes.train = () => {
-  const syms = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'x', 'y', '+', 'times', 'cdot', '(', ')', 'sqrt', 'pi'];
-  const label = s => ({ sqrt: '√', pi: 'π', times: '×', cdot: '·' }[s] || s);
+  const syms = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'x', 'y', 'a', 'b', 'c', 'k', 'm', 'n', 'r', 't', 'z', 'theta', 's', 'i', 'o', 'l', 'g',
+    '+', 'times', 'cdot', 'div', 'pm', 'lt', 'gt', 'le', 'ge', 'deg', ',', '(', ')', 'sqrt', 'pi'];
+  const label = s => ({ sqrt: '√', pi: 'π', times: '×', cdot: '·', theta: 'θ', div: '÷', pm: '±', lt: '<', gt: '>', le: '≤', ge: '≥', deg: '°' }[s] || s);
   let i = 0;
   view().innerHTML = header('Teach my handwriting') + `<main class="train">
-    <p class="muted">For × write it small and centred, like a plus turned 45°; for the letter x sit it on the line. The · dot is read by its height, so its samples just let you practise it — try “3·4” with Test. Write the shown symbol once in the box, then Save. 3–5 samples of each symbol makes recognition much more reliable for your writing. Use “Test” to try whole answers.</p>
+    <p class="muted">Letters s, i, o, l, g are only used inside the words sin, cos, tan, log, ln (try “sin30” with Test). °, ·, ÷, comma and the dot of i are read by size and position, so their samples are for practice only. For × write it small and centred, like a plus turned 45°; for the letter x sit it on the line. The · dot is read by its height, so its samples just let you practise it — try “3·4” with Test. Write the shown symbol once in the box, then Save. 3–5 samples of each symbol makes recognition much more reliable for your writing. Use “Test” to try whole answers.</p>
     <div class="seg" id="syms">${syms.map((s, k) => `<button class="btn small" data-i="${k}">${label(s)} <small>${S.templates.filter(t => t.sym === s).length}</small></button>`).join('')}</div>
     <div class="target" id="target"></div>
     <div class="ansbox tall"><canvas id="tc" class="ink"></canvas></div>
@@ -209,11 +219,38 @@ routes.train = () => {
   view().querySelectorAll('#syms button').forEach(b => b.onclick = () => { i = +b.dataset.i; show(); }); show();
   $('#tclear').onclick = () => { pad.load([]); $('#tout').innerHTML = ''; };
   $('#tsave').onclick = async () => { if (!pad.strokes.length) return; const st = pad.strokes.map(s => s.map(p => [Math.round(p[0]), Math.round(p[1])]));
-    S.templates.push({ sym: syms[i], strokes: st }); if (syms[i] !== 'cdot') Recognizer.addTemplate(syms[i], st, true); await save('templates'); pad.load([]);
+    S.templates.push({ sym: syms[i], strokes: st }); if (!Recognizer.POSITIONAL.includes(syms[i])) Recognizer.addTemplate(syms[i], st, true); await save('templates'); pad.load([]);
     view().querySelector(`#syms [data-i="${i}"] small`).textContent = S.templates.filter(t => t.sym === syms[i]).length; $('#tout').textContent = 'Saved.'; };
   $('#ttest').onclick = () => { const r = Recognizer.recognise(pad.strokes); $('#tout').innerHTML = `I read: ${K(r.latex || '?')} <code>${esc(r.plain)}</code>`; };
   $('#treset').onclick = async () => { if (!confirm('Delete all your handwriting samples?')) return; S.templates = []; await save('templates'); Recognizer.resetTemplates(); routes.train(); };
 };
+// ---------- backup ----------
+const KV_KEYS = ['progress', 'srs', 'settings', 'placement', 'templates'];
+function backupDue() { const any = Object.values(S.progress).some(p => p.attempts) || S.templates.length; return any && (!S.settings.lastBackup || Date.now() - S.settings.lastBackup > 7 * DAY); }
+async function exportBackup() {
+  S.settings.lastBackup = Date.now(); await save('settings');
+  const data = { app: 'penmaths', format: 1, exported: new Date().toISOString(), kv: {} }; KV_KEYS.forEach(k => data.kv[k] = S[k]);
+  const blob = new Blob([JSON.stringify(data)], { type: 'application/json' }), url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = `penmaths-backup-${new Date().toISOString().slice(0, 10)}.json`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 5000);
+  if (location.hash === '#settings') routes.settings();
+}
+async function importBackup(file) {
+  let data; try { data = JSON.parse(await file.text()); } catch (e) { return alert('That file is not a Pen Maths backup.'); }
+  if (!data || data.app !== 'penmaths' || !data.kv) return alert('That file is not a Pen Maths backup.');
+  if (!confirm(`Replace progress on this device with the backup from ${data.exported ? new Date(data.exported).toLocaleString() : 'the file'}?`)) return;
+  for (const k of KV_KEYS) if (data.kv[k] != null) { S[k] = k === 'settings' ? Object.assign(S.settings, data.kv[k]) : data.kv[k]; await save(k); }
+  Recognizer.resetTemplates(); S.templates.forEach(t => !Recognizer.POSITIONAL.includes(t.sym) && Recognizer.addTemplate(t.sym, t.strokes, true));
+  applyTheme(); alert('Backup restored.'); go('#home');
+}
+// ---------- full screen ----------
+function toggleFullscreen() {
+  const d = document.documentElement;
+  if (document.fullscreenElement) { S.settings.fullscreen = false; save('settings'); document.exitFullscreen().catch(() => {}); }
+  else { S.settings.fullscreen = true; save('settings'); (d.requestFullscreen ? d.requestFullscreen({ navigationUI: 'hide' }) : Promise.reject()).catch(() => {}); }
+}
+document.addEventListener('click', e => { if (e.target.closest('.fsbtn')) toggleFullscreen(); });
+// pen-up is a user activation, so we can quietly re-enter full screen if Android dropped it
+document.addEventListener('pointerup', e => { if (e.pointerType === 'pen' && S.settings.fullscreen && !document.fullscreenElement && document.documentElement.requestFullscreen && !matchMedia('(display-mode: fullscreen)').matches) document.documentElement.requestFullscreen({ navigationUI: 'hide' }).catch(() => {}); }, true);
 // ---------- boot ----------
 (async () => {
   await loadState(); render();

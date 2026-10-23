@@ -33,6 +33,19 @@
       ${labels.angle ? `<text x="${x1 - 46}" y="${y0 - 6}">${labels.angle}</text>` : ''}</svg>`;
   }
 
+  function plotSVG(fns, marks, opt) { // fns: [x=>y], marks: [[x,y,label]]
+    opt = opt || {}; const X = opt.x || [-6, 6], Y = opt.y || [-6, 6], W = 280, H = 280, sx = W / (X[1] - X[0]), sy = H / (Y[1] - Y[0]);
+    const px = x => (x - X[0]) * sx, py = y => H - (y - Y[0]) * sy; let g = '';
+    for (let x = Math.ceil(X[0]); x <= X[1]; x++) g += `<line x1="${px(x)}" y1="0" x2="${px(x)}" y2="${H}" class="gl"/>`;
+    for (let y = Math.ceil(Y[0]); y <= Y[1]; y++) g += `<line x1="0" y1="${py(y)}" x2="${W}" y2="${py(y)}" class="gl"/>`;
+    g += `<line x1="0" y1="${py(0)}" x2="${W}" y2="${py(0)}" class="ax"/><line x1="${px(0)}" y1="0" x2="${px(0)}" y2="${H}" class="ax"/>`;
+    g += `<text x="${W - 10}" y="${py(0) - 5}">x</text><text x="${px(0) + 5}" y="12">y</text>`;
+    for (let x = Math.ceil(X[0]) + 1; x < X[1]; x += 2) if (x) g += `<text x="${px(x)}" y="${py(0) + 14}" text-anchor="middle" class="tick">${x}</text>`;
+    for (let y = Math.ceil(Y[0]) + 1; y < Y[1]; y += 2) if (y) g += `<text x="${px(0) - 4}" y="${py(y) + 4}" text-anchor="end" class="tick">${y}</text>`;
+    for (const f of fns) { let d = ''; for (let i = 0; i <= 200; i++) { const x = X[0] + (X[1] - X[0]) * i / 200, y = f(x); if (y < Y[0] - 5 || y > Y[1] + 5) { d += ' '; continue; } d += `${d.endsWith(' ') || !d ? 'M' : 'L'}${px(x).toFixed(1)},${py(y).toFixed(1)}`; } g += `<path d="${d.replace(/ M/g, 'M').replace(/ L/g, 'M').trim()}" class="curve"/>`; }
+    for (const [x, y, l] of marks || []) g += `<circle cx="${px(x)}" cy="${py(y)}" r="5" class="pt"/>${l ? `<text x="${px(x) + 8}" y="${py(y) - 8}">${l}</text>` : ''}`;
+    return `<svg viewBox="0 0 ${W} ${H}" class="diagram graph" role="img"><clipPath id="cp"><rect width="${W}" height="${H}"/></clipPath><g clip-path="url(#cp)">${g}</g></svg>`;
+  }
   const topics = [
   { id: 'integers', title: 'Integers & order of operations', grade: 7,
     explain: `Numbers to the left of zero are **negative**. Rules worth knowing cold:\n\n- Subtracting a negative is adding: $5 - (-3) = 5 + 3 = 8$.\n- Multiplying or dividing: same signs give $+$, different signs give $-$. So $(-4)(-6) = 24$ and $(-20) \\div 5 = -4$.\n- Order of operations: brackets, powers, then $\\times\\,\\div$ (left to right), then $+\\,-$ (left to right).`,
@@ -105,7 +118,7 @@
     ] },
 
   { id: 'linear', title: 'Linear equations', grade: 8,
-    explain: `An equation is a balance: whatever you do to one side, do to the other. Goal: get $x$ alone.\n\n1. Expand brackets.\n2. Collect $x$ terms on one side, numbers on the other.\n3. Divide by the coefficient of $x$.\n\nCheck by substituting back. You may write just the number, or $x = \\dots$`,
+    explain: `An equation is a balance: whatever you do to one side, do to the other. Goal: get $x$ alone.\n\n1. Expand brackets.\n2. Collect $x$ terms on one side, numbers on the other.\n3. Divide by the coefficient of $x$.\n\nCheck by substituting back. You may write just the number, or $x = \\dots$\n\n**Inequalities** ($<, >, \\le, \\ge$) solve the same way, except multiplying or dividing by a negative number **flips** the sign. Write the answer like $x \\ge -2$.`,
     example: { q: 'Solve $3(x - 2) = x + 8$', steps: ['Expand: $3x - 6 = x + 8$', 'Subtract $x$: $2x - 6 = 8$', 'Add $6$: $2x = 14$', 'Divide by $2$: $x = 7$'], a: '7' },
     gen(r, L) {
       const x = r.int(-9, 9);
@@ -113,6 +126,9 @@
         return { q: `Solve $${a}x ${sg(b)} = ${c}$`, a: `${x}`, steps: [`${b > 0 ? 'Subtract' : 'Add'} $${Math.abs(b)}$ on both sides: $${a}x = ${c - b}$`, `Divide by $${a}$: $x = ${x}$`] }; }
       if (L === 2) { let a = r.int(2, 9), c = r.int(1, 9); if (a === c) a++; const b = r.nz(-12, 12), d = a * x + b - c * x;
         return { q: `Solve $${a}x ${sg(b)} = ${coef(c, 'x')} ${sg(d)}$`, a: `${x}`, steps: [`Subtract $${coef(c, 'x')}$: $${a - c}x ${sg(b)} = ${d}$`, `${b > 0 ? 'Subtract' : 'Add'} $${Math.abs(b)}$: $${a - c}x = ${d - b}$`, `Divide by $${a - c}$: $x = ${x}$`] }; }
+      if (r.next() < 0.3) { const a = r.nz(-6, 6), b = r.nz(-10, 10), op = r.pick(['<', '>', '≤', '≥']), c = a * x + b; const flip = { '<': '>', '>': '<', '≤': '≥', '≥': '≤' }[op], fo = a < 0 ? flip : op;
+        const tex = o => ({ '<': '<', '>': '>', '≤': '\\le', '≥': '\\ge' }[o]);
+        return { q: `Solve the inequality $${coef(a, 'x')} ${sg(b)} ${tex(op)} ${c}$`, a: `x${fo}${x}`, aTex: `x ${tex(fo)} ${x}`, steps: [`${b > 0 ? 'Subtract' : 'Add'} $${Math.abs(b)}$: $${coef(a, 'x')} ${tex(op)} ${c - b}$`, a < 0 ? `Divide by $${a}$ — dividing by a **negative flips** the sign: $x ${tex(fo)} ${x}$` : `Divide by $${a}$: $x ${tex(fo)} ${x}$`] }; }
       if (r.next() < 0.5) { const a = r.int(2, 5), b = r.nz(-6, 6), c = r.int(2, 4), k = r.nz(-6, 6); // a(x+b) = c(x+k) + e
         const e = a * (x + b) - c * (x + k); if (a === c) return this.gen(r, 2);
         return { q: `Solve $${a}(x ${sg(b)}) = ${c}(x ${sg(k)}) ${sg(e)}$`, a: `${x}`, steps: [`Expand: $${a}x ${sg(a * b)} = ${c}x ${sg(c * k)} ${sg(e)}$`, `Simplify right: $${c}x ${sg(c * k + e)}$`, `Collect: $${a - c}x = ${c * k + e - a * b}$`, `$x = ${x}$`] }; }
@@ -125,17 +141,17 @@
     ] },
 
   { id: 'quadratics', title: 'Expanding, factorising & quadratics', grade: 9,
-    explain: `**Expanding**: $(x + a)(x + b) = x^2 + (a+b)x + ab$.\n\n**Factorising** $x^2 + bx + c$: find two numbers that **multiply** to $c$ and **add** to $b$. E.g. $x^2 + 5x + 6 = (x+2)(x+3)$.\n\n**Solving** $x^2 + bx + c = 0$: factorise, then each bracket can be zero. If it won't factorise use the formula\n$$x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$$\n\nWhen asked to factorise, write it with brackets — e.g. $(x+2)(x-5)$.`,
-    example: { q: 'Solve $x^2 - x - 12 = 0$ and give the larger root', steps: ['Need two numbers: product $-12$, sum $-1$ → $-4$ and $3$', '$(x - 4)(x + 3) = 0$', '$x = 4$ or $x = -3$; larger root $4$'], a: '4' },
+    explain: `**Expanding**: $(x + a)(x + b) = x^2 + (a+b)x + ab$.\n\n**Factorising** $x^2 + bx + c$: find two numbers that **multiply** to $c$ and **add** to $b$. E.g. $x^2 + 5x + 6 = (x+2)(x+3)$.\n\n**Solving** $x^2 + bx + c = 0$: factorise, then each bracket can be zero. If it won't factorise use the formula\n$$x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$$\n\nWhen asked to factorise, write it with brackets — e.g. $(x+2)(x-5)$. For two roots write both with a comma between, in any order: $4, -3$. The formula's $\\pm$ is fine too, e.g. $1 \\pm 3$.`,
+    example: { q: 'Solve $x^2 - x - 12 = 0$', steps: ['Need two numbers: product $-12$, sum $-1$ → $-4$ and $3$', '$(x - 4)(x + 3) = 0$', '$x = 4$ or $x = -3$ — write both, separated by a comma: $4, -3$'], a: '4,-3' },
     gen(r, L) {
       const p = r.nz(-9, 9), q = r.nz(-9, 9);
       if (L === 1) return { q: `Expand $(x ${sg(p)})(x ${sg(q)})$`, a: `x^2+${p + q}x+${p * q}`, aTex: polyL([[1, 2], [p + q, 1], [p * q, 0]]), steps: [`FOIL: $x^2 ${sg(q)}x ${sg(p)}x ${sg(p * q)}$`, `Collect: $${polyL([[1, 2], [p + q, 1], [p * q, 0]])}$`] };
       if (L === 2) return { q: `Factorise $${polyL([[1, 2], [p + q, 1], [p * q, 0]])}$`, a: `(x+${p})(x+${q})`, aTex: `(x ${sg(p)})(x ${sg(q)})`, form: 'factored', steps: [`Two numbers with product $${p * q}$ and sum $${p + q}$: $${p}$ and $${q}$`, `$(x ${sg(p)})(x ${sg(q)})$`] };
-      if (r.next() < 0.6) { const big = Math.max(-p, -q);
-        return { q: `Solve $${polyL([[1, 2], [p + q, 1], [p * q, 0]])} = 0$. Give the **larger** root.`, a: `${big}`, steps: [`Factorise: $(x ${sg(p)})(x ${sg(q)}) = 0$`, `$x = ${-p}$ or $x = ${-q}$`, `Larger root: $${big}$`] }; }
+      if (r.next() < 0.6) { const rs = p === q ? `${-p}` : `${-p},${-q}`;
+        return { q: `Solve $${polyL([[1, 2], [p + q, 1], [p * q, 0]])} = 0$. Give ${p === q ? 'the root' : '**both** roots, separated by a comma'}.`, a: rs, aTex: p === q ? `x = ${-p}` : `x = ${-p} \\text{ or } x = ${-q}`, steps: [`Factorise: $(x ${sg(p)})(x ${sg(q)}) = 0$`, `Each bracket can be zero: $x = ${-p}$ or $x = ${-q}$`] }; }
       const a = r.int(2, 3), m = r.nz(-5, 5), n = r.nz(-5, 5); // a(x-m)(x-n) area via formula: give sum of roots
       const B = -a * (m + n), Cc = a * m * n;
-      return { q: `Solve $${polyL([[a, 2], [B, 1], [Cc, 0]])} = 0$. Give the **smaller** root.`, a: `${Math.min(m, n)}`, steps: [`Divide by $${a}$: $${polyL([[1, 2], [-(m + n), 1], [m * n, 0]])} = 0$`, `Factorise: $(x ${sg(-m)})(x ${sg(-n)}) = 0$`, `Roots $${m}$ and $${n}$; smaller is $${Math.min(m, n)}$`] };
+      return { q: `Solve $${polyL([[a, 2], [B, 1], [Cc, 0]])} = 0$. Give ${m === n ? 'the root' : '**both** roots, separated by a comma'}.`, a: m === n ? `${m}` : `${m},${n}`, aTex: `x = ${m}${m === n ? '' : ` \\text{ or } x = ${n}`}`, steps: [`Divide by $${a}$: $${polyL([[1, 2], [-(m + n), 1], [m * n, 0]])} = 0$`, `Factorise: $(x ${sg(-m)})(x ${sg(-n)}) = 0$`, `Roots: $x = ${m}$ and $x = ${n}$`] };
     },
     push: [
       { q: 'If $x + \\frac{1}{x} = 5$, find $x^2 + \\frac{1}{x^2}$', a: '23', steps: ['Square both sides: $x^2 + 2 + \\frac{1}{x^2} = 25$', 'So $x^2 + \\frac{1}{x^2} = 23$'] },
@@ -187,6 +203,34 @@
       { q: 'Find the exact value of $\\sin^2 37^\\circ + \\cos^2 37^\\circ$.', a: '1', steps: ['Pythagoras on the unit triangle: $\\sin^2\\theta + \\cos^2\\theta = 1$ for every $\\theta$'] },
     ] },
 
+
+  { id: 'functions', title: 'Functions & graphs', grade: 10,
+    explain: `A **function** $f$ takes an input $x$ and gives one output $f(x)$. To find $f(3)$, replace every $x$ with $3$.\n\n**Straight lines** $y = mx + c$: $m$ is the **gradient** (rise over run) and $c$ is the **$y$-intercept** (where the line crosses the $y$-axis).\n$$m = \\frac{y_2 - y_1}{x_2 - x_1}$$\n\n**Parabolas** $y = a(x - p)^2 + q$ have their **turning point (vertex)** at $(p, q)$. For $y = x^2 + bx + c$ the vertex is at $x = -\\frac{b}{2}$.\n\nFor a point, write the coordinates as $x, y$ — e.g. $2, -3$ (order matters).`,
+    example: { q: 'Find the gradient of the line through $(1, 2)$ and $(4, 11)$', steps: ['$m = \\frac{11 - 2}{4 - 1}$', '$= \\frac{9}{3} = 3$'], a: '3' },
+    gen(r, L) {
+      if (L === 1) { if (r.next() < 0.5) { const a = r.nz(-5, 5), b = r.int(-9, 9), k = r.int(-5, 5); const v = a * k + b;
+          return { q: `If $f(x) = ${polyL([[a, 1], [b, 0]])}$, find $f(${k})$`, a: `${v}`, steps: [`Replace $x$ with $${k}$: $f(${k}) = ${a}\\times${par(k)} ${sg(b)}$`, `$= ${v}$`] }; }
+        const a = r.nz(-3, 3), b = r.int(-6, 6), c = r.int(-6, 6), k = r.int(-3, 3); const v = a * k * k + b * k + c;
+        return { q: `If $f(x) = ${polyL([[a, 2], [b, 1], [c, 0]])}$, find $f(${k})$`, a: `${v}`, steps: [`Substitute $x = ${k}$: $${a}\\times${par(k)}^2 ${sg(b)}\\times${par(k)} ${sg(c)}$`, `$= ${a * k * k} ${sg(b * k)} ${sg(c)} = ${v}$`] }; }
+      if (L === 2) { const x1 = r.int(-4, 0), x2 = x1 + r.int(1, 4), y1 = r.int(-4, 4), m = r.pick([-2, -1, 1, 2, 3, 0.5, -0.5]); const y2 = y1 + m * (x2 - x1);
+        if (!Number.isInteger(y2) || Math.abs(y2) > 5) return this.gen(r, 2);
+        const c = y1 - m * x1, ask = r.pick(['m', 'c']), f = x => m * x + c, ms = fr(Math.round(m * 2), 2);
+        return { q: ask === 'm' ? 'Find the **gradient** of the line shown (the marked points are on it).' : 'Find the **$y$-intercept** of the line shown (the marked points are on it).',
+          svg: plotSVG([f], [[x1, y1, `(${x1}, ${y1})`], [x2, y2, `(${x2}, ${y2})`]]), a: ask === 'm' ? fp(ms) : `${c}`,
+          steps: [`$m = \\frac{${y2} - ${par(y1)}}{${x2} - ${par(x1)}} = \\frac{${y2 - y1}}{${x2 - x1}} = ${fl(ms)}$`].concat(ask === 'c' ? [`$y = mx + c$ through $(${x1}, ${y1})$: $${y1} = ${fl(ms)}\\times${par(x1)} + c$`, `$c = ${c}$`] : []) }; }
+      const p = r.int(-3, 3), q = r.int(-4, 4), a = r.pick([1, 1, -1]); const f = x => a * (x - p) * (x - p) + q;
+      const t = r.int(0, 2);
+      if (t === 0) return { q: 'The graph shows a parabola. Write the coordinates of its turning point as $x, y$.', svg: plotSVG([f], [[p, q, '']]), a: `${p},${q}`, aTex: `(${p}, ${q})`, ordered: true, steps: [`The turning point is where the graph changes direction`, `Read it off: $(${p}, ${q})$`] };
+      const b = -2 * p, c0 = p * p + q;
+      if (t === 1) return { q: `Find the **minimum value** of $y = ${polyL([[1, 2], [b, 1], [c0, 0]])}$`, a: `${q}`, steps: [`Complete the square: $y = (x ${sg(-p)})^2 ${sg(q)}$`, `A square is never negative, so the minimum is when $x = ${p}$`, `Minimum value $${q}$`] };
+      const g = r.int(1, 4), h = r.nz(-3, 3), k = r.int(-2, 3); const inner = g * k + h, v = inner * inner;
+      return { q: `$f(x) = x^2$ and $g(x) = ${polyL([[g, 1], [h, 0]])}$. Find $f(g(${k}))$`, a: `${v}`, steps: [`Inside first: $g(${k}) = ${inner}$`, `Then $f(${inner}) = ${par(inner)}^2 = ${v}$`] };
+    },
+    push: [
+      { q: 'If $f(x) = 2x + 3$, find $x$ such that $f(f(x)) = 29$', a: '5', steps: ['$f(f(x)) = 2(2x + 3) + 3 = 4x + 9$', '$4x + 9 = 29 \\Rightarrow x = 5$'] },
+      { q: 'The lines $y = 2x + 1$ and $y = -x + 7$ meet at a point. Give its coordinates as $x, y$.', a: '2,5', ordered: true, aTex: '(2, 5)', steps: ['Set equal: $2x + 1 = -x + 7$', '$3x = 6$, so $x = 2$ and $y = 5$'] },
+      { q: 'A function satisfies $f(x + 1) = f(x) + 3$ and $f(0) = 4$. Find $f(10)$.', a: '34', steps: ['Each step of $1$ in $x$ adds $3$', '$f(10) = 4 + 10 \\times 3 = 34$'] },
+    ] },
   { id: 'derivatives', title: 'Introduction to derivatives', grade: 11,
     explain: `The **derivative** $f'(x)$ is the slope of the tangent to $y = f(x)$ — the instantaneous rate of change:\n$$f'(x) = \\lim_{h \\to 0} \\frac{f(x+h) - f(x)}{h}$$\n\n**Power rule**: $\\frac{d}{dx} x^n = n x^{n-1}$. Constants vanish, and you differentiate term by term:\n$$\\frac{d}{dx}\\left(3x^4 - 5x + 7\\right) = 12x^3 - 5$$\n\nWrite answers like $12x^3 - 5$ using raised powers.`,
     example: { q: 'Find the slope of $y = x^3 - 2x$ at $x = 2$', steps: ["$y' = 3x^2 - 2$", "At $x = 2$: $3(4) - 2 = 10$"], a: '10' },
@@ -202,6 +246,30 @@
       { q: 'Find the minimum value of $f(x) = x^2 - 6x + 11$ using derivatives.', a: '2', steps: ["$f'(x) = 2x - 6 = 0 \\Rightarrow x = 3$", '$f(3) = 9 - 18 + 11 = 2$'] },
       { q: 'A rectangle has perimeter $20$. What is its maximum possible area?', a: '25', steps: ['Sides $x$ and $10 - x$: area $A = 10x - x^2$', "$A' = 10 - 2x = 0 \\Rightarrow x = 5$", 'Max area $= 5 \\times 5 = 25$ (a square)'] },
       { q: 'Using the definition, $\\lim_{h\\to0} \\frac{(3+h)^2 - 9}{h} = ?$', a: '6', steps: ['Expand: $\\frac{9 + 6h + h^2 - 9}{h} = 6 + h$', 'As $h \\to 0$ this tends to $6$'] },
+    ] },
+
+  { id: 'integrals', title: 'Introduction to integrals', grade: 12,
+    explain: `**Integration** undoes differentiation. The **antiderivative** of $x^n$ (for $n \\ne -1$) is
+$$\\int x^n\\,dx = \\frac{x^{n+1}}{n+1} + c$$
+Add one to the power, divide by the new power; integrate term by term. The $+ c$ is there because constants vanish when you differentiate — you may write it or leave it out.
+
+A **definite integral** gives the (signed) area under a curve between $x = a$ and $x = b$:
+$$\\int_a^b f(x)\\,dx = F(b) - F(a)$$
+where $F$ is any antiderivative.`,
+    example: { q: 'Evaluate $\\int_1^3 2x\\,dx$', steps: ['Antiderivative of $2x$ is $x^2$', '$F(3) - F(1) = 9 - 1 = 8$'], a: '8' },
+    gen(r, L) {
+      if (L === 1) { const n = r.int(1, 5), k = (n + 1) * r.int(1, 4) * (r.next() < 0.8 ? 1 : -1);
+        return { q: `Find $\\int ${coef(k, 'x')}^{${n}}\\,dx$`.replace('x^{1}\\,', 'x\\,'), a: `${k / (n + 1)}x^${n + 1}`, aTex: `${coef(k / (n + 1), 'x')}^{${n + 1}} + c`, upToC: true, steps: [`Add one to the power: $${n} + 1 = ${n + 1}$`, `Divide by it: $\\frac{${k}}{${n + 1}}x^{${n + 1}} = ${coef(k / (n + 1), 'x')}^{${n + 1}}$`, 'Add $+ c$'] }; }
+      const a3 = 3 * r.int(-2, 2), a2 = 2 * r.nz(-4, 4), a1 = r.int(-6, 6); const cs = [[a3, 2], [a2, 1], [a1, 0]].filter(c => c[0]);
+      const F = cs.map(([c, p]) => [c / (p + 1), p + 1]); const Fv = x => F.reduce((s, [c, p]) => s + c * Math.pow(x, p), 0);
+      if (L === 2) return { q: `Find $\\int (${polyL(cs)})\\,dx$`, a: F.map(([c, p]) => `(${c})*x^(${p})`).join('+'), aTex: polyL(F) + ' + c', upToC: true, steps: ['Integrate term by term: raise each power by one and divide by the new power', `$${polyL(F)} + c$`] };
+      const lo = r.int(-2, 1), hi = lo + r.int(1, 3); const v = Fv(hi) - Fv(lo);
+      return { q: `Evaluate $\\int_{${lo}}^{${hi}} (${polyL(cs)})\\,dx$`, a: `${Math.round(v * 6)}/6`, aTex: fl(fr(Math.round(v * 6), 6)), steps: [`Antiderivative $F(x) = ${polyL(F)}$`, `$F(${hi}) = ${fl(fr(Math.round(Fv(hi) * 6), 6))}$, $F(${lo}) = ${fl(fr(Math.round(Fv(lo) * 6), 6))}$`, `$F(${hi}) - F(${lo}) = ${fl(fr(Math.round(v * 6), 6))}$`] };
+    },
+    push: [
+      { q: 'Find the area between $y = x$ and $y = x^2$ for $0 \\le x \\le 1$.', a: '1/6', steps: ['On $[0, 1]$ the line is above the parabola', 'Area $= \\int_0^1 (x - x^2)\\,dx = \\frac12 - \\frac13$', '$= \\frac16$'] },
+      { q: 'Find $k > 0$ such that $\\int_0^k 2x\\,dx = 49$', a: '7', steps: ['$\\int_0^k 2x\\,dx = k^2$', '$k^2 = 49$, $k = 7$'] },
+      { q: 'Evaluate $\\int_{-3}^{3} (x^3 + 5x)\\,dx$', a: '0', steps: ['$x^3 + 5x$ is an odd function: the area left of $0$ cancels the area right of $0$', 'Result $0$ — no calculation needed'] },
     ] },
   ];
   const SUBJECTS = [{ id: 'maths', title: 'Mathematics', topics }];

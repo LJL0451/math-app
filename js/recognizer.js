@@ -62,6 +62,28 @@
            [P([[0, 0], [100, 0]]), P([[30, 0], [30, 100]]), P([[70, 0], [70, 100]])],
            [P([[0, 0], [100, 0]]), C([[30, 0], [28, 60], [15, 100]]), C([[70, 0], [70, 80], [90, 100]])]],
     '^': [[P([[0, 100], [50, 0], [100, 100]])]],
+    // letters (variables)
+    'a': [[C([[75, 25], [50, 5], [20, 20], [15, 60], [40, 95], [70, 75], [75, 25]]).concat(P([[75, 25], [75, 100]]))], [ellipse(45, 55, 32, 42, -0.3, -2 * Math.PI), P([[78, 10], [78, 100]])]],
+    'b': [[P([[25, 0], [25, 100]]).concat(C([[25, 100], [25, 60], [50, 40], [75, 55], [75, 85], [50, 100], [25, 90]]))], [P([[25, 0], [25, 100]]), ellipse(50, 72, 25, 28, Math.PI, 2 * Math.PI)]],
+    'c': [[C([[75, 20], [50, 0], [20, 15], [10, 50], [20, 85], [50, 100], [75, 82]])]],
+    'k': [[P([[20, 0], [20, 100]]), P([[75, 30], [22, 65], [80, 100]])], [P([[20, 0], [20, 100]]), P([[75, 30], [22, 65]]), P([[40, 55], [80, 100]])]],
+    'm': [[C([[10, 100], [10, 30], [12, 50], [30, 15], [48, 35], [50, 100]]).concat(C([[50, 100], [52, 40], [70, 15], [88, 35], [90, 100]]))]],
+    'n': [[C([[15, 100], [15, 25], [16, 50], [40, 12], [72, 28], [78, 100]])]],
+    'r': [[C([[20, 100], [20, 25], [21, 55], [45, 18], [80, 20]])]],
+    't': [[P([[40, 0], [40, 80]]).concat(C([[40, 80], [50, 100], [75, 92]])), P([[10, 30], [75, 30]])], [P([[40, 0], [40, 100]]), P([[10, 30], [75, 30]])]],
+    'z': [[P([[10, 0], [90, 0], [10, 100], [90, 100]])]],
+    'theta': [[ellipse(50, 50, 30, 50, -Math.PI / 2, -2 * Math.PI), P([[22, 50], [78, 50]])], [C([[50, 50], [20, 45], [25, 5], [50, 0], [75, 20], [78, 70], [55, 100], [25, 90], [20, 50], [80, 50]])]],
+    // word-only letters (used inside sin/cos/tan/log/ln; never output alone)
+    's': [[C([[80, 15], [55, 0], [25, 8], [22, 35], [50, 50], [78, 65], [75, 92], [45, 100], [15, 88]])]],
+    'o': [[ellipse(50, 50, 45, 45, -Math.PI / 2, -2 * Math.PI)]],
+    'g': [[C([[70, 15], [50, 0], [22, 8], [18, 32], [40, 45], [68, 30], [70, 15]]).concat(C([[70, 15], [70, 110], [45, 130], [20, 115]]))]],
+    'l': [[C([[45, 0], [45, 90], [55, 100]])]],
+    // operators
+    'pm': [[P([[50, 0], [50, 70]]), P([[10, 35], [90, 35]]), P([[10, 100], [90, 100]])], [P([[10, 35], [90, 35]]), P([[50, 0], [50, 70]]), P([[10, 100], [90, 100]])]],
+    'lt': [[P([[90, 0], [10, 50], [90, 100]])]],
+    'gt': [[P([[10, 0], [90, 50], [10, 100]])]],
+    'le': [[P([[90, 0], [10, 40], [90, 80]]), P([[10, 105], [90, 105]])]],
+    'ge': [[P([[10, 0], [90, 40], [10, 80]]), P([[10, 105], [90, 105]])]],
     // multiplication cross: same shape family as x; told apart by context (see disambiguate)
     'times': [[P([[10, 10], [90, 90]]), P([[90, 10], [10, 90]])], [P([[10, 10], [90, 90]]), P([[10, 90], [90, 10]])]],
   };
@@ -107,6 +129,7 @@
   function addTemplate(sym, strokes, user) { templates.push({ sym, pts: normalize(strokes), n: strokes.length, user: !!user }); }
   function resetTemplates() { templates = []; for (const k in T) T[k].forEach(v => addTemplate(k, v)); }
   resetTemplates();
+  const WORD_ONLY = ['s', 'o', 'g', 'l'];
   function classify(strokes, exclude) {
     const pts = normalize(strokes); const scores = {};
     for (const t of templates) {
@@ -152,6 +175,8 @@
         else if (b.cx < bb.cx) left.push(s); else right.push(s);
       }
       if (!above.length || !below.length) continue;
+      const tinyS = x => { const b = bbox([x]); return Math.max(b.w, b.h) < 0.22 * H; };
+      if (above.length === 1 && below.length === 1 && tinyS(above[0]) && tinyS(below[0])) continue; // ÷
       // "=" : two flat lines of similar width with nothing else stacked
       if (above.length === 1 && below.length === 0) continue;
       const ab = bbox(above), bl = bbox(below);
@@ -168,7 +193,8 @@
     // 1b. radical signs: a wide stroke shaped like a tick with a roof; contents sit under the roof
     for (const s of strokes) {
       const b = bbox([s]); if (b.w < 0.6 * H || straightness(s) > 0.8) continue;
-      const r = classify([s]); if (r[0][0] !== 'sqrt') continue;
+      const r = classify([s], WORD_ONLY); const sq = r.find(x => x[0] === 'sqrt');
+      if (!sq || !(r[0][0] === 'sqrt' || (sq[1] < r[0][1] * 1.15 && b.w > 0.9 * H))) continue;
       const inner = [], left = [], right = [];
       for (const o of strokes) { if (o === s) continue; const ob = bbox([o]);
         if (ob.cx > b.minX + 0.3 * b.w && ob.cx < b.maxX + 0.05 * H && ob.cy > b.minY) inner.push(o);
@@ -187,6 +213,8 @@
         const tiny = Math.max(b.w, b.h) < 0.22 * H || Math.max(gb.w, gb.h) < 0.22 * H;
         const within = (b.cx > gb.minX && b.cx < gb.maxX) || (gb.cx > b.minX && gb.cx < b.maxX);
         if (!tiny && (ov > 0.5 * mw || within)) { g.push(s); continue; }
+        // dot over i: tiny stroke above the last symbol
+        if (Math.max(b.w, b.h) < 0.22 * H && b.cx > gb.minX - 0.15 * H && b.cx < gb.maxX + 0.15 * H && b.maxY < gb.minY + 0.05 * H && gb.minY - b.maxY < 0.6 * H && gb.h > 0.3 * H) { g.idot = true; continue; }
         // radical: anything to the right but under its bar belongs to it -> handled below
       }
       groups.push([s]);
@@ -194,18 +222,18 @@
     // 3. classify each group
     let syms = [];
     for (let gi = 0; gi < groups.length; gi++) {
-      const g = groups[gi], b = bbox(g); let sym;
+      const g = groups[gi], b = bbox(g); let sym, rankedAll = null;
       if (Math.max(b.w, b.h) < 0.22 * H) sym = '.';
       else if (g.length === 1 && isFlat(g[0], H)) sym = '-';
       else if (g.length === 2 && g.every(s => isFlat(s, H * 0.6))) sym = '=';
       else if (g.length === 1 && straightness(g[0]) > 0.9) {
         const s = g[0], dx = s[s.length - 1][0] - s[0][0], dy = s[s.length - 1][1] - s[0][1];
         const r = Math.abs(dx) / (Math.abs(dy) || 1e-6);
-        if (r < 0.36) sym = '1';
+        if (r < 0.36) { sym = '1'; rankedAll = [['1', 0], ['l', 0]]; }
         else if (r < 2.5 && (dx * dy < 0)) sym = '/';
         else sym = classify(g)[0][0];
       } else {
-        const ranked = classify(g); sym = ranked[0][0];
+        rankedAll = classify(g); const ranked = rankedAll.filter(r => !WORD_ONLY.includes(r[0])); sym = ranked[0][0];
         if (sym === 'sqrt') {
           // swallow following groups under the bar
           const inner = [];
@@ -216,49 +244,96 @@
         }
       }
       // radical can also have been merged with its contents in a single group
-      syms.push({ sym, b, ranked: g.length > 0 && (sym === 'x' || sym === 'times') ? classify(g, null) : null });
+      syms.push({ sym, b, g, ranked: rankedAll, rankedAll, idot: g.idot });
     }
+    // touching stem + bowl/arms written as separate strokes: try them as one letter (b, k, a)
+    for (let i = 0; i + 1 < syms.length; i++) {
+      const A = syms[i], B = syms[i + 1]; if (!A.g || !B.g || !(A.sym === '1' || B.sym === '1')) continue;
+      if (B.b.minX - A.b.maxX > 0.06 * H) continue;
+      const merged = A.g.concat(B.g), r = classify(merged, WORD_ONLY);
+      if (['b', 'k', 'a'].includes(r[0][0]) && !(OPTS.expectsVar === false && r[0][0] === 'a')) { const g = merged; syms.splice(i, 2, { sym: r[0][0], b: bbox(g), g, ranked: r, rankedAll: classify(g), idot: A.idot || B.idot }); }
+    }
+    // ÷ : a bar with a dot above and below
+    for (const bar of syms.filter(x => x.sym === '-')) {
+      const dots = syms.filter(d => d.sym === '.' && d.b.cx > bar.b.minX && d.b.cx < bar.b.maxX);
+      const up = dots.find(d => d.b.cy < bar.b.cy), dn = dots.find(d => d.b.cy > bar.b.cy);
+      if (up && dn) { bar.sym = 'div'; syms = syms.filter(d => d !== up && d !== dn); }
+    }
+    syms = words(syms);
     disambiguate(syms, H);
     // fix: '-' then content under a radical shape inside one group (rare) ignored.
     // 4. superscripts
     const out = []; let i = 0;
-    const base = s => /[0-9xy)]|pi/.test(s.sym);
+    const base = s => isOperand(s) && s.sym !== 'fn';
+    const NOSUP = ['-', '+', '=', '/', 'times', 'cdot', 'pm', 'div', 'lt', 'gt', 'le', 'ge', ',', 'fn'];
     while (i < syms.length) {
       const s = syms[i]; out.push(s); i++;
       if (base(s) && s.sym !== '.') {
         const sup = [];
-        while (i < syms.length && !['-', '+', '=', '/', 'times', 'cdot'].includes(syms[i].sym) && syms[i].b.maxY < s.b.cy + 0.1 * s.b.h && syms[i].b.h < 0.8 * Math.max(s.b.h, H * 0.6) && syms[i].sym !== '.') sup.push(syms[i++]);
-        if (sup.length) out.push({ sup });
+        while (i < syms.length && !NOSUP.includes(syms[i].sym) && syms[i].b.maxY < s.b.cy + 0.1 * s.b.h && syms[i].b.h < 0.8 * Math.max(s.b.h, H * 0.6) && syms[i].sym !== '.') sup.push(syms[i++]);
+        if (sup.length === 1 && sup[0].sym === '0' && sup[0].b.h < 0.55 * Math.max(s.b.h, H * 0.6)) out.push({ sym: 'deg', b: sup[0].b });
+        else if (sup.length) out.push({ sup });
       }
     }
     return render(out);
   }
-  const LATEX = { pi: '\\pi', '-': '-', '+': '+', '/': '/', '^': '^', '.': '.', '=': '=', x: 'x', y: 'y', sqrt: '\\sqrt{}', times: '\\times ', cdot: '\\cdot ' };
+  const LATEX = { pi: '\\pi', '-': '-', '+': '+', '/': '/', '^': '^', '.': '.', '=': '=', x: 'x', y: 'y', sqrt: '\\sqrt{}', times: '\\times ', cdot: '\\cdot ', theta: '\\theta ', pm: '\\pm ', div: '\\div ', lt: '<', gt: '>', le: '\\le ', ge: '\\ge ', deg: '^{\\circ}', ',': ',\\,' };
+  const PLAIN = { times: '*', cdot: '*', theta: 'θ', pm: '±', div: '/', lt: '<', gt: '>', le: '≤', ge: '≥', deg: '°' };
   function render(list) {
     let latex = '', plain = '';
     for (const s of list) {
       if (s.sup) { const r = render(s.sup); latex += `^{${r.latex}}`; plain += `^(${r.plain})`; continue; }
       if (s.latex) { latex += s.latex; plain += s.plain; continue; }
-      latex += LATEX[s.sym] || s.sym; plain += s.sym === 'times' || s.sym === 'cdot' ? '*' : s.sym;
+      if (s.sym === 'fn') { latex += `\\${s.name} `; plain += s.name; continue; }
+      latex += LATEX[s.sym] || s.sym; plain += PLAIN[s.sym] || s.sym;
     }
     return { latex, plain };
   }
   // stroke input: array of strokes; each stroke array of [x,y,(p)]
   // ---------- x vs ×, '.' vs '·' from context ----------
   let OPTS = {};
-  const isOperand = s => s && (/^[0-9xy)]$|^pi$/.test(s.sym) || s.latex);
+  const VARS = ['x', 'y', 'a', 'b', 'c', 'k', 'm', 'n', 'r', 't', 'z', 'theta'];
+  const isOperand = s => s && (/^[0-9)]$|^pi$|^deg$/.test(s.sym) || VARS.includes(s.sym) || s.latex);
+  // function names spelled with letters (look-alike digits accepted: 5→s, 0→o, 1→l, 9→g, +→t, (→c)
+  const LOOK = { '5': ['s'], '0': ['o'], '1': ['l'], '9': ['g'], '+': ['t'], '(': ['c'], 'c': ['c'] };
+  const WORDS = ['sin', 'cos', 'tan', 'log', 'ln'];
+  function cands(s) {
+    const c = new Set([s.sym, ...(LOOK[s.sym] || [])]);
+    if (s.rankedAll && s.rankedAll.length) { const best = s.rankedAll[0][1]; s.rankedAll.slice(0, 4).forEach(r => { if (r[1] <= best * 1.35 + 1e-9) c.add(r[0]); }); }
+    if (s.idot) c.add('i'); return c;
+  }
+  function words(syms) {
+    const out = [];
+    for (let i = 0; i < syms.length; i++) {
+      let hit = null;
+      for (const w of WORDS) { if (i + w.length > syms.length) continue; let ok = true; for (let k = 0; k < w.length && ok; k++) ok = cands(syms[i + k]).has(w[k]); if (ok) { hit = w; break; } }
+      if (hit) { const parts = syms.slice(i, i + hit.length); const b = { minX: parts[0].b.minX, maxX: parts[parts.length - 1].b.maxX, minY: Math.min(...parts.map(p => p.b.minY)), maxY: Math.max(...parts.map(p => p.b.maxY)) }; b.w = b.maxX - b.minX; b.h = b.maxY - b.minY; b.cx = (b.minX + b.maxX) / 2; b.cy = (b.minY + b.maxY) / 2;
+        out.push({ sym: 'fn', name: hit, b }); i += hit.length - 1; }
+      else out.push(syms[i]);
+    }
+    return out;
+  }
   const isOperandStart = s => s && (isOperand(s) || s.sym === '(');
   function lineRef(syms, i, H) { // baseline/top from nearby full-height operands
-    const near = []; for (let k = i - 2; k <= i + 2; k++) if (k !== i && syms[k] && /^[0-9()]$|^pi$|^[xy]$/.test(syms[k].sym) && syms[k].b.h > 0.3 * H) near.push(syms[k].b);
+    const near = []; for (let k = i - 2; k <= i + 2; k++) if (k !== i && syms[k] && (/^[0-9()]$|^pi$/.test(syms[k].sym) || VARS.includes(syms[k].sym)) && syms[k].b.h > 0.3 * H) near.push(syms[k].b);
     if (!near.length) return null;
     const base = Math.max(...near.map(b => b.maxY)), top = Math.min(...near.map(b => b.minY)); return { base, top, h: Math.max(base - top, 1) };
   }
   function disambiguate(syms, H) {
     for (let i = 0; i < syms.length; i++) {
       const s = syms[i], prev = syms[i - 1], next = syms[i + 1];
-      const between = isOperand(prev) && isOperandStart(next);
+      if (OPTS.expectsVar === false && VARS.includes(s.sym) && s.sym !== 'x' && s.ranked) { // numeric answer expected: prefer a close digit
+        const best = s.ranked.find(r => r[0] === s.sym), dg = s.ranked.find(r => /^[0-9]$/.test(r[0]));
+        if (best && dg && dg[1] < best[1] * 1.25) s.sym = dg[0];
+      }
+      const raisedNext = next && next.b.maxY < s.b.cy + 0.1 * s.b.h && next.b.h < 0.8 * s.b.h; // next is a superscript of s
+      const between = isOperand(prev) && isOperandStart(next) && !raisedNext;
       if (s.sym === '.') { // a dot raised to mid-height between operands is a multiplication dot
         const L = lineRef(syms, i, H); if (between && L && s.b.cy < L.base - 0.28 * L.h) s.sym = 'cdot'; continue;
+      }
+      if (['1', '/', ')', '(', '.'].includes(s.sym)) { // comma: small elongated mark sitting low
+        const L = lineRef(syms, i, H);
+        if (L && s.b.h < 0.5 * L.h && s.b.h > 1.3 * s.b.w && s.b.h > 0.08 * L.h && s.b.cy > L.base - 0.22 * L.h) { s.sym = ','; continue; }
       }
       if (s.sym !== 'x' && s.sym !== 'times') continue;
       const L = lineRef(syms, i, H); let score = between ? 0.5 : -3;
@@ -283,6 +358,6 @@
     if (!clean.length) return { latex: '', plain: '' };
     return recognise(clean, 0);
   }
-  const api = { recognise: recogniseInk, classify, addTemplate, resetTemplates, symbols: Object.keys(T).concat(['-', '.', '/', '=', 'cdot']), _T: T, _bbox: bbox };
+  const api = { recognise: recogniseInk, classify, addTemplate, resetTemplates, symbols: Object.keys(T).filter(k => !WORD_ONLY.includes(k)).concat(['-', '.', '/', '=', 'cdot', 'div', 'deg', ',']), WORD_ONLY, POSITIONAL: ['cdot', 'div', 'deg', ',', 'i'], _T: T, _bbox: bbox };
   if (typeof module !== 'undefined') module.exports = api; else root.Recognizer = api;
 })(this);

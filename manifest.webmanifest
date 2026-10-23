@@ -1,2 +1,2 @@
-{"name":"Pen Maths","short_name":"Pen Maths","description":"Pen-first maths practice, offline.","start_url":"./index.html","scope":"./","display":"standalone","orientation":"any","background_color":"#f7f7f4","theme_color":"#2b59c3",
+{"name":"Pen Maths","short_name":"Pen Maths","description":"Pen-first maths practice, offline.","start_url":"./index.html","scope":"./","display":"fullscreen","display_override":["fullscreen","standalone"],"orientation":"any","background_color":"#f7f7f4","theme_color":"#2b59c3",
 "icons":[{"src":"icons/icon-192.png","sizes":"192x192","type":"image/png"},{"src":"icons/icon-512.png","sizes":"512x512","type":"image/png"},{"src":"icons/icon-512.png","sizes":"512x512","type":"image/png","purpose":"maskable"}]}
